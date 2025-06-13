@@ -1,0 +1,205 @@
+#define NUM_DISTANCES 20
+#define NUM_BIT_WORDS 1000
+
+program
+
+    var $userposition as handle
+    var $positionint as real
+    var $userspeed as handle
+    var $speedvalue as string
+    var $speedint as integer
+    var $speed_degs as integer
+    var $i as integer
+    var $array_index as integer
+    var $positions[NUM_DISTANCES] as real
+    var $distances[NUM_DISTANCES] as real
+    
+    var $position_array[NUM_DISTANCES] as real
+    var $char as string
+    var $temp_str as string = ""
+    var $position as string
+    var $num_counts as real
+
+    // Read speed and positions from files (as in your original code)
+    $userspeed = FileOpenText("UserSpeed.txt", FileMode.Read)
+    $userposition = FileOpenText("UserPosition.txt", FileMode.Read)
+
+    $speedvalue = FileTextReadLine($userspeed)
+    $speedint = StringToInteger($speedvalue)
+    $speed_degs = $speedint * 360
+    FileClose($userspeed)
+
+    while(true)
+        $position = FileTextReadLine($userposition)
+        if(StringEquals($position, "")) 
+            break
+        end
+
+        var $j as integer
+        for $j = 0 to StringLength($position)-1
+            $char = StringSubstring($position, $j, 1)
+            if (StringEquals($char, ","))
+                $positionint = StringToReal($temp_str)
+                $position_array[$array_index] = $positionint
+                $array_index += 1
+                $temp_str = ""
+            else
+                $temp_str += $char
+            end
+        end
+
+        if StringLength($temp_str) > 0
+            $positionint = StringToReal($temp_str)
+            $position_array[$array_index] = $positionint
+            $array_index += 1
+            $temp_str = ""
+        end
+    end
+    FileClose($userposition)
+
+    var $axis as axis = Theta
+    $num_counts = 20000
+
+    // Convert user positions into counts (or leave as is if already in counts)
+    for $i = 0 to NUM_DISTANCES-1
+        $positions[$i] = $position_array[$i]
+    end
+
+    Enable($axis)
+    Home($axis)
+
+    // Move to the first position
+    MoveLinear($axis, CountsToUnits($axis, $positions[0] * ParameterGetAxisValue($axis, AxisParameter.PrimaryEmulatedQuadratureDivider)))
+
+    // Setup PSO as before for 20 known positions
+    PsoReset($axis)
+    SetupTaskTargetMode(TargetMode.Incremental)
+    PsoDistanceConfigureInputs($axis, [PsoDistanceInput.iXC4PrimaryFeedback])
+
+    for $i = 0 to NUM_DISTANCES-1
+        $distances[$i] = Modulo($positions[Modulo($i+1, NUM_DISTANCES)] - $positions[$i], $num_counts)
+    end
+
+    DriveArrayWrite($axis, $distances, 0, NUM_DISTANCES, DriveArrayType.PsoDistanceEventDistances)
+    PsoDistanceConfigureArrayDistances($axis, 0, NUM_DISTANCES, true)
+    PsoDistanceCounterOn($axis)
+    PsoDistanceEventsOn($axis)
+
+    // PSO waveform configuration (as previously done)
+    var $FixedTotalTime = 10
+    var $FixedOnTime = 10
+    var $FixedCount = 1
+
+    PsoWaveformConfigureMode($axis, PsoWaveformMode.Pulse)
+    PsoWaveformConfigurePulseFixedTotalTime($axis, $FixedTotalTime)
+    PsoWaveformConfigurePulseFixedOnTime($axis, $FixedOnTime)
+    PsoWaveformConfigurePulseFixedCount($axis, $FixedCount)
+    PsoWaveformApplyPulseConfiguration($axis)
+
+    PsoOutputConfigureSource($axis, PsoOutputSource.Waveform)
+    PsoOutputConfigureOutput($axis, PsoOutputPin.iXC4AuxiliaryMarkerSingleEnded)
+    PsoWaveformOn($axis)
+
+    var $bitValues[NUM_BIT_WORDS] as real
+    for $i = 0 to 63
+        $bitValues[$i] = 0x0
+    end
+    $bitValues[64] = 0x1
+    for $i = 65 to NUM_BIT_WORDS-1
+        $bitValues[$i] = 0xFFFFFFFF
+    end
+
+    var $bitmaskAddress = 4*NUM_DISTANCES
+    DriveArrayWrite($axis, $bitValues, $bitmaskAddress, NUM_BIT_WORDS, DriveArrayType.PsoBitmapBits)
+    PsoBitmapConfigureArray($axis, $bitmaskAddress, NUM_BIT_WORDS, false)
+    //PsoEventConfigureMask($axis, PsoEventMask.BitMask)
+
+    // Start continuous rotation
+    //MoveFreerun($axis, $speed_degs)
+	//PsoOutputConfigureOutput($axis, PsoOutputPin.iXC4AuxiliaryMarkerSingleEnded)
+	MoveFreerun($axis, 16560)
+
+    // -----------------------------
+    // Software-based digital I/O pulse each time we pass the first position
+    // NOTE: This uses a wait loop. Whenever the axis passes positions[0], we set a digital line.
+    // Because this is modulo, after it passes positions[0], we wait for it to wrap around again.
+    // -----------------------------
+    var $trigger_angle as real = $positions[0] * ParameterGetAxisValue($axis, AxisParameter.PrimaryEmulatedQuadratureDivider)
+	//var $last_angle as real = $positions[19] * ParameterGetAxisValue($axis, AxisParameter.PrimaryEmulatedQuadratureDivider)
+	//var $trigger_angle as real = 19440
+	//var $last_angle as real = 0
+	var $n as integer = 1
+	var $Threshold as real
+	//var $array[2000] as real
+	
+	//var $angleBetween as real = ($last_angle + ($trigger_angle + 20000 - $last_angle )/2)
+	//var $iteration as real
+	while(true)
+			
+			$trigger_angle = $n*20000 - 1200
+    		//var $threshold = $angleBetween + ($n * 20000)
+		//based on axis position
+    		//wait(StatusGetAxisItem($axis, AxisStatusItem.PositionFeedback) >= $trigger_angle)
+			//CriticalSectionStart()
+			wait(StatusGetAxisItem($axis, AxisStatusItem.PositionCommandRaw) >= CountsToUnits($axis, $trigger_angle))
+			//CriticalSectionEnd()
+			//var $feedback as real = StatusGetAxisItem($axis, AxisStatusItem.PositionFeedback) /  CountsToUnits($axis, $trigger_angle)
+			//var $feedbackstring as string = RealToString($feedback)
+			//AppMessageDisplay($feedbackstring)
+
+    		DigitalOutputSet($axis, 1, 1)
+			//Dwell(0.0001)
+    		DigitalOutputSet($axis, 1, 0)
+			$n = $n + 1
+			
+			//$trigger_angle = 20000*$n
+		end
+
+    	//$n = $n + 1
+		//wait (StatusGetAxisItem($axis, AxisStatusItem.PositionFeedback) <= CountsToUnits($axis, $threshold))
+	//end
+
+    // If the program is aborted or ends, do a final cleanup
+    //PsoEventConfigureMask($axis, 0)
+	//Dwell(5)
+	PsoEventConfigureMask($axis, PsoEventMask.BitMask)
+
+	//while (true)
+ 	   // Check if position >= trigger angle
+  	  //wait (StatusGetAxisItem($axis, AxisStatusItem.PositionFeedback) >= $trigger_angle)
+   	     //DigitalOutputSet($axis, 1, 1)   // Turn on digital output
+    	    //Dwell(0.0003)                  // Keep on for 300 microseconds
+       	 //DigitalOutputSet($axis, 1, 0)  // Turn off digital output
+
+	        // Wait until position wraps back around	
+ 	       //while ($current >= $trigger_angle)
+    	        // Do nothing, keep monitoring
+    	    //break
+			//end
+   		 //end
+	//end
+
+//    while (true)
+//        // Wait until position >= trigger angle
+//        WAITUNTIL ($axis.PositionFeedback >= $trigger_angle)
+
+        // Once at/above the trigger angle, set digital output line
+//        DigitalOutputSet($axis, 1, 1)   // Turn on digital out/put
+//        Dwell(0.0003)         // Keep on for 300 microseconds (adjust as needed)
+//        DigitalOutputSet($axis, 1, 0)   // Turn off digital output
+
+//        // Now wait until we wrap around (axis position < trigger_angle), indicating a new revolution
+//        WAITUNTIL ($axis.PositionFeedback < $trigger_angle)
+//        // Loop repeats, so next time it crosses trigger_angle again, we fire the digital pulse again
+//	end
+
+    // If we ever exit the loop (perhaps with an ABORT)
+    //PsoEventConfigureMask($axis, 0)
+    //Abort ($axis)
+    //Disable ($axis)
+
+end
+
+function Modulo($value as real, $divisor as real) as real
+    return $value - (Floor($value/$divisor)*$divisor)
+end

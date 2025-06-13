@@ -1,0 +1,12 @@
+program
+
+	var $axis as axis = Theta
+
+	Enable($axis)
+		PsoDistanceCounterOff($axis)
+		PsoDistanceEventsOff($axis)
+		PsoWaveformOff($axis)
+		PsoOutputOff($axis)
+		MoveFreerunStop($axis)
+		Disable($axis)
+end

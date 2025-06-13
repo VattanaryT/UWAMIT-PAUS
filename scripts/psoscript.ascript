@@ -1,0 +1,132 @@
+//-80, 930, 1890, 2850, 3780, 4740, 5690, 6700, 7670, 8660, 9660, 10740, 11690, 12650, 13680, 14700, 15660, 16620, 17680, 18730
+
+#define NUM_DISTANCES 20
+
+program
+
+	var $userdistance as handle
+	//var $distancevalue as string
+	var $distanceint as real
+	var $userspeed as handle
+	var $speedvalue as string
+	var $speedint as integer
+	//var $sentence as string
+	var $i as integer
+	var $array_index as integer
+	var $distances[NUM_DISTANCES] as real
+	
+	var $distance_array[NUM_DISTANCES] as real  // Array to store distances
+    var $char as string
+    var $temp_str as string = ""
+	var $distance as string
+    //var $distance_string as string = ""
+	//var $j as integer
+
+	// Open the file for reading.
+	$userspeed = FileOpenText("UserSpeed.txt", FileMode.Read)
+	$userdistance = FileOpenText("UserDistance.txt", FileMode.Read)
+
+	$speedvalue = FileTextReadLine($userspeed)
+	$speedint = StringToInteger($speedvalue)
+
+    // Read all lines from the user distance file and process them.
+    while (true)
+        $distance = FileTextReadLine($userdistance)
+        if (StringEquals($distance, ""))  // Break if there's no more data.
+            break
+        end
+
+        // Manually split the line by commas and convert each part to an integer
+			var $j as integer
+			
+			for $j = 0 to StringLength($distance) - 1
+			    $char = StringSubstring($distance, $j, 1)  // Get each character
+			
+			    if (StringEquals($char, ","))  // If it's a comma, convert the collected string
+			        $distanceint = StringToReal($temp_str)  // Convert to real number
+			        $distance_array[$array_index] = $distanceint  // Store in array
+			        $array_index += 1
+			        $temp_str = ""  // Reset the temp string
+			    else
+			        $temp_str += $char  // Collect characters into a temp string
+			    end
+			end	
+
+        // Add the last number after the loop
+        if StringLength($temp_str) > 0
+            $distanceint = StringToReal($temp_str)
+            $distance_array[$i] = $distanceint  // Store in array
+            $i += 1
+        end
+    end
+	
+	// Close the file.
+	FileClose($userspeed)
+	FileClose($userdistance)
+
+    var $axis as axis = Theta
+    var $tolerance as real = 1.0  // Define a tolerance for position comparison
+    var $current_position as real
+    var $pso_enabled as integer = 0  // Set PSO enabled flag initially to 0 (false)
+
+    var $FixedTotalTime = 1000000/960
+    var $FixedOnTime = 100
+    var $FixedCount = 20000
+
+    // Reset internal PSO counters
+    PsoReset($axis)
+    
+    //****** PSO distance event module setup ******
+    PsoDistanceConfigureInputs($axis, [PsoDistanceInput.iXC4PrimaryFeedback])
+	//PsoDistanceConfigureInputs($axis, [PsoDistanceInput.iXC4AuxiliaryFeedback])
+
+    // Define user-settable array of distances
+    //var $user_distances[NUM_DISTANCES] as real = [18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18]
+	
+	//var $user_distances[NUM_DISTANCES] as real = [1, 19, 37, 55, 73, 91, 109, 127, 145, 163, 181, 199, 217, 235, 253, 271, 289, 305, 325, 343]
+
+    for $i = 0 to 19
+        $distances[$i] = UnitsToCounts($axis, ($distance_array[$i])) / ParameterGetAxisValue($axis, AxisParameter.PrimaryEmulatedQuadratureDivider)
+    end
+
+    // Write the distances to the drive array
+	DriveArrayWrite($axis, $distances, 0, NUM_DISTANCES, DriveArrayType.PsoDistanceEventDistances)
+
+    // Configure the distance module to generate an event at the distances specified in the drive array
+    PsoDistanceConfigureArrayDistances($axis, 0, NUM_DISTANCES, true)  // Enable wrap-around
+
+	PsoDistanceCounterOn($axis)
+	PsoDistanceEventsOn($axis)
+
+    //****** PSO waveform module setup (pulse) ******
+    PsoWaveformConfigureMode($axis, PsoWaveformMode.Pulse)
+    PsoWaveformConfigurePulseFixedTotalTime($axis, $FixedTotalTime)  // Total pulse time (microseconds)
+    PsoWaveformConfigurePulseFixedOnTime($axis, $FixedOnTime)        // ON time (microseconds)
+    PsoWaveformConfigurePulseFixedCount($axis, $FixedCount)          // Number of output events per pulse
+    PsoWaveformApplyPulseConfiguration($axis)
+    
+    // Configure PSO output source and physical output pin
+    PsoOutputConfigureSource($axis, PsoOutputSource.Waveform)
+    PsoOutputConfigureOutput($axis, PsoOutputPin.iXC4AuxiliaryMarkerSingleEnded)
+
+    //****** Monitor position and trigger PSO after the first full rotation ****** 
+	$current_position = StatusGetAxisItem($axis, AxisStatusItem.PositionFeedback)
+	
+	// Check if the current position is close to a multiple of 360 degrees
+	var $revolutions = $current_position / 360  // Calculate how many full revolutions
+	var $remainder = $current_position - ($revolutions * 360)  // Calculate remainder
+	
+	// If the remainder is within the tolerance (i.e., close to a multiple of 360 degrees)
+	if $remainder <= $tolerance
+	    // Enable PSO if it hasn't been enabled yet
+	    if $pso_enabled == 0
+	        // A multiple of 360 degrees has been reached, enable PSO
+	        PsoWaveformOn($axis)  // Ensure PSO waveform is turned on
+	        //PsoDistanceCounterOn($axis)
+	        //PsoDistanceEventsOn($axis)
+	        $pso_enabled = 1  // Set flag to indicate PSO has been enabled
+	        AppMessageDisplay("PSO enabled at multiple of 360 degrees.")
+	    end
+	end
+
+end

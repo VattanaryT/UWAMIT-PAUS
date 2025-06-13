@@ -1,0 +1,10 @@
+
+var $axis as axis = Theta
+
+Enable($axis)
+Home($axis)
+
+
+//MoveFreerun($axis, 545)
+
+MoveLinear($axis, CountsToUnits($axis, 8140))

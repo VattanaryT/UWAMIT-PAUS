@@ -1,0 +1,75 @@
+#define VELOCITY      360*48
+#define NUM_COUNTS    20000          // encoder counts / rev
+#define ARRAY         2              // one distance increment
+
+//-----------------------------------------------
+// one trigger each rev, at a user-chosen position
+//-----------------------------------------------
+program
+    var $axis        as axis    = Theta
+    var $velocity    as integer = VELOCITY
+	var $position[ARRAY] as real = [800, 1600]
+	var $num_counts as real = 20000
+	var $distance[ARRAY] as real
+
+    //-----------------------------------------------------------------
+    // USER-EDITABLE OFFSET (encoder counts after marker)
+    //-----------------------------------------------------------------
+    //var $offsetCounts as integer = 800          // <-- change me
+    //-----------------------------------------------------------------
+
+    // distance array holds ONE increment (20 000 counts)
+
+    // pulse shape
+    var $FixedTotalTime as integer = 100
+    var $FixedOnTime    as integer = 100
+    var $FixedCount     as integer = 1
+
+    //--------------------------- 1. initialise -------------------------
+    Enable($axis)
+    Home($axis)
+    PsoReset($axis)
+	SetupTaskTargetMode(TargetMode.Absolute)
+
+    PsoDistanceConfigureInputs($axis, [PsoDistanceInput.iXC4PrimaryFeedback])
+	
+	//PsoDistanceConfigureCounterReset($axis, 2)
+
+    //--------------------------- 2. load array -------------------------
+	var $i as integer
+    for $i = 0 to ARRAY-1
+        $distance[$i] = Modulo($position[Modulo($i+1, ARRAY)] - $position[$i], $num_counts)
+		//AppMessageDisplay("Distance (counts) " + RealToString($i) + ": " + RealToString($distances[$i]))
+    end
+
+    // Write the distances to the drive array (expects counts)
+	DriveArrayWrite($axis, $distance, 0, ARRAY, DriveArrayType.PsoDistanceEventDistances)
+
+    // Configure the distance module to generate an event at the distances specified in the drive array
+    PsoDistanceConfigureArrayDistances($axis, 0, ARRAY, true)  // Enable wrap-around
+
+    PsoDistanceCounterOn($axis)
+    PsoDistanceEventsOn($axis)
+
+    //--------------------------- 4. waveform ---------------------------
+    PsoWaveformConfigureMode($axis, PsoWaveformMode.Pulse)
+    PsoWaveformConfigurePulseFixedTotalTime($axis, $FixedTotalTime)
+    PsoWaveformConfigurePulseFixedOnTime($axis,  $FixedOnTime)
+    PsoWaveformConfigurePulseFixedCount($axis,   $FixedCount)
+    PsoWaveformApplyPulseConfiguration($axis)
+
+    PsoOutputConfigureOutput($axis, PsoOutputPin.iXC4AuxiliaryMarkerSingleEnded)
+    PsoOutputConfigureSource($axis, PsoOutputSource.Waveform)
+    PsoWaveformOn($axis)
+
+    //--------------------------- 5. run -------------------------------
+    MoveFreerun($axis, $velocity)
+end
+
+//-----------------------------------------------------------------
+// helper (kept for symmetry with the 20-position program, although
+// it's not used in the final code)
+//-----------------------------------------------------------------
+function Modulo($value as real, $divisor as real) as real
+    return $value - (Floor($value/$divisor) * $divisor)
+end

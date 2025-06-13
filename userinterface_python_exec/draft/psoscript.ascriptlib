@@ -1,0 +1,51 @@
+#define NUM_DISTANCES 20
+
+program
+
+	var $axis as axis = Theta
+	var $distances[NUM_DISTANCES] as real
+	var $i as integer
+	var $revolution_counts as real = 0
+	var $revolution_threshold as real = 360 // Full revolution threshold in degrees
+	
+	// Set incremental mode.
+	SetupTaskTargetMode(TargetMode.Incremental)
+	
+	Enable($axis)
+	Home($axis)
+	
+	// Reset internal PSO counters
+	PsoReset($axis)
+	
+	//****** PSO distance event module setup ******
+	PsoDistanceConfigureInputs($axis, [PsoDistanceInput.iXC4PrimaryFeedback])
+	
+	// Define a user-settable array of distances (example values are provided)
+	var $user_distances[NUM_DISTANCES] as real = [18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18]
+	
+	// Precompute the distances in counts and only trigger after a full revolution
+	for $i = 0 to 19
+	    $distances[$i] = UnitsToCounts($axis, ($user_distances[$i])) / ParameterGetAxisValue($axis, AxisParameter.PrimaryEmulatedQuadratureDivider)
+	end
+	
+	DriveArrayWrite($axis, $distances, 0, NUM_DISTANCES, DriveArrayType.PsoDistanceEventDistances)
+	
+	PsoDistanceCounterOn($axis)
+	PsoDistanceEventsOn($axis)
+	
+	//****** PSO waveform module setup (pulse) ******
+	PsoWaveformConfigureMode($axis, PsoWaveformMode.Pulse)
+	PsoWaveformConfigurePulseFixedTotalTime($axis, 1000)  // Total pulse time (microseconds)
+	PsoWaveformConfigurePulseFixedOnTime($axis, 100)      // ON time (microseconds)
+	PsoWaveformConfigurePulseFixedCount($axis, 200)       // Number of output events per pulse
+	PsoWaveformApplyPulseConfiguration($axis)
+	PsoWaveformOn($axis)
+	
+	//****** PSO output module setup ******
+	PsoOutputConfigureSource($axis, PsoOutputSource.Waveform)
+	PsoOutputConfigureOutput($axis, PsoOutputPin.iXC4AuxiliaryMarkerSingleEnded)
+	
+	// Start motor movement (continuous)
+	MoveFreerun($axis, 18000)
+
+end

@@ -1,0 +1,59 @@
+#define VELOCITY 360*48
+#define ARRAY 1
+
+//-----------------------------------------------
+// produces one trigger signal everytime motor passes home position
+//-----------------------------------------------
+
+program
+	var $axis as axis = Theta
+	var $velocity as integer = VELOCITY
+    var $FixedTotalTime = 100	// time between the beginning of each pulses
+    var $FixedOnTime = 100		// duration of output signal
+    var $FixedCount = 1			// one pulse per event
+	var $positions[ARRAY] as real = [20000]
+
+	Enable($axis)
+    Home($axis)
+	
+	PsoReset($axis)
+    SetupTaskTargetMode(TargetMode.Incremental)
+	
+    PsoDistanceConfigureInputs($axis, [PsoDistanceInput.iXC4PrimaryFeedback])
+
+	DriveArrayWrite($axis, $positions, 0, ARRAY, DriveArrayType.PsoDistanceEventDistances)
+
+    // Configure the distance module to generate an event at the distances specified in the drive array
+    PsoDistanceConfigureArrayDistances($axis, 0, ARRAY, true)  // Enable wrap-around
+	
+	PsoDistanceCounterOn($axis)
+	PsoDistanceEventsOn($axis)
+
+    //****** PSO waveform module setup (pulse) ******
+    PsoWaveformConfigureMode($axis, PsoWaveformMode.Pulse)
+    PsoWaveformConfigurePulseFixedTotalTime($axis, $FixedTotalTime)  // Total pulse time (microseconds)
+    PsoWaveformConfigurePulseFixedOnTime($axis, $FixedOnTime)        // ON time (microseconds)
+    PsoWaveformConfigurePulseFixedCount($axis, $FixedCount)          // Number of output events per pulse
+    PsoWaveformApplyPulseConfiguration($axis)
+	//PsoWaveformOn($axis)  // Ensure PSO waveform is turned on
+
+    // Configure PSO output source and physical output pin
+	//PsoWaveformOn($axis)  // Ensure PSO waveform is turned on
+    //PsoOutputConfigureSource($axis, PsoOutputSource.Waveform)
+    PsoOutputConfigureOutput($axis, PsoOutputPin.XC4AuxiliaryMarkerSingleEnded)
+	PsoOutputConfigureSource($axis, PsoOutputSource.Waveform)
+	PsoWaveformOn($axis)
+
+	//DriveArrayWrite($axis, $bitValues, $bitmaskAddress, NUM_BIT_WORDS, DriveArrayType.PsoBitmapBits)
+
+	// Configure bit data from drive array.
+	//PsoBitmapConfigureArray($axis, $bitmaskAddress, NUM_BIT_WORDS, false)
+	
+	//PsoEventConfigureMask($axis, PsoEventMask.BitMask)
+	MoveFreerun($axis, $velocity)
+	//Dwell(3)
+    //PsoOutputConfigureOutput($axis, PsoOutputPin.iXC4AuxiliaryMarkerSingleEnded)
+	//Dwell(5)
+    //MoveFreerun($axis, $speed_degs)
+	//PsoEventConfigureMask($axis, 0)
+end

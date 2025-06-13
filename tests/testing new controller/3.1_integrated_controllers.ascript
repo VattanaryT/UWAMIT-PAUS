@@ -1,0 +1,158 @@
+#define VELOCITY 360*48
+#define NUM_DISTANCES 20
+#define NUM_BIT_WORDS 1000
+
+//05/16 testing (note: consistently triggers one signal at first fiber for each rotation, still need to shift back)
+// DO NOT MODIFY
+
+program
+
+	var $axis as axis = Theta
+	var $velocity as integer = VELOCITY
+	var $offset_counts as integer = 833 
+	var $axis2 as axis = Y
+
+	Enable($axis)
+	Home($axis)
+	PsoReset($axis)
+	//PsoReset($axis2)
+	
+	// distance module
+	PsoDistanceConfigureInputs($axis, [PsoDistanceInput.iXC4PrimaryFeedback])
+	PsoDistanceConfigureFixedDistance($axis, 20000)
+	//PsoDistanceConfigureCounterReset($axis, -$offset_counts)
+	PsoDistanceCounterOn($axis)
+	PsoDistanceEventsOn($axis)
+
+	// waveform & output exactly as you have it …
+	PsoWaveformConfigureMode($axis, PsoWaveformMode.Pulse)
+	PsoWaveformConfigurePulseFixedTotalTime($axis, 100)
+	PsoWaveformConfigurePulseFixedOnTime($axis, 20)
+	PsoWaveformConfigurePulseFixedCount($axis, 1)
+	PsoWaveformApplyPulseConfiguration($axis)
+
+	PsoOutputConfigureOutput($axis, PsoOutputPin.iXC4AuxiliaryMarkerSingleEnded)
+	PsoOutputConfigureSource($axis, PsoOutputSource.Waveform)
+	PsoWaveformOn($axis)
+	
+	//MoveFreerun($axis, $velocity)
+	
+	//var $axis2 as axis = Y
+	var $userposition as handle
+	//var $distancevalue as string
+	var $positionint as real
+	var $userspeed as handle
+	var $speedvalue as string
+	var $speedint as integer
+	var $speed_degs as integer
+	//var $sentence as string
+	var $i as integer
+	var $array_index as integer
+	var $positions[NUM_DISTANCES] as real
+	var $distances[NUM_DISTANCES] as real
+	
+	var $position_array[NUM_DISTANCES] as real  // Array to store positions
+    var $char as string
+    var $temp_str as string = ""
+	var $position as string
+	var $num_counts as real
+    //var $distance_string as string = ""
+	//var $j as integer
+
+	// Open the file for reading.
+	$userspeed = FileOpenText("UserSpeed.txt", FileMode.Read)
+	$userposition = FileOpenText("UserPosition.txt", FileMode.Read)
+
+	$speedvalue = FileTextReadLine($userspeed)
+	$speedint = StringToInteger($speedvalue)
+	$speed_degs = $speedint * 360
+	//AppMessageDisplay(IntegerToString($speed_degs))
+
+    // Read all lines from the user distance file and process them.
+    while (true)
+        $position = FileTextReadLine($userposition)
+        if (StringEquals($position, ""))  // Break if there's no more data.
+            break
+        end
+
+        // Manually split the line by commas and convert each part to an integer
+			var $j as integer
+			
+			for $j = 0 to StringLength($position) - 1
+			    $char = StringSubstring($position, $j, 1)  // Get each character
+			
+			    if (StringEquals($char, ","))  // If it's a comma, convert the collected string
+			        $positionint = StringToReal($temp_str)  // Convert to real number
+			        $position_array[$array_index] = $positionint  // Store in array
+			        $array_index += 1
+			        $temp_str = ""  // Reset the temp string
+			    else
+			        $temp_str += $char  // Collect characters into a temp string
+			    end
+			end	
+
+        // Add the last number after the loop
+        if StringLength($temp_str) > 0
+            $positionint = StringToReal($temp_str)
+            $position_array[$array_index] = $positionint  // Store in array
+            $array_index += 1
+        end
+    end
+	
+	// Close the file.
+	FileClose($userspeed)
+	FileClose($userposition)
+
+    var $FixedTotalTime = 100	// time between the beginning of each pulses
+    var $FixedOnTime = 100		// duration of output signal
+    var $FixedCount = 1			// one pulse per event
+	
+    // Convert positions to counts
+	$num_counts = 20000
+    for $i = 0 to NUM_DISTANCES-1
+        $positions[$i] = $position_array[$i]
+		//AppMessageDisplay("Position (counts) " + RealToString($i) + ": " + RealToString($positions[$i]))
+    end
+	
+    // Calculate distances
+    for $i = 0 to NUM_DISTANCES-1
+        $distances[$i] = Modulo($positions[Modulo($i+1, NUM_DISTANCES)] - $positions[$i], $num_counts)
+		//AppMessageDisplay("Distance (counts) " + RealToString($i) + ": " + RealToString($distances[$i]))
+    end
+	
+	PsoDistanceConfigureInputs($axis2, [PsoDistanceInput.XC4SyncPortA])
+
+    // Write the distances to the drive array (expects counts)
+	DriveArrayWrite($axis2, $distances, 0, NUM_DISTANCES, DriveArrayType.PsoDistanceEventDistances)
+
+    // Configure the distance module to generate an event at the distances specified in the drive array
+    PsoDistanceConfigureArrayDistances($axis2, 0, NUM_DISTANCES, true)  // Enable wrap-around
+	DriveEncoderOutputConfigureInput(Theta, EncoderOutputChannel.SyncPortA, EncoderInputChannel.PrimaryEncoder)
+	DriveEncoderOutputOn(Theta, EncoderOutputChannel.SyncPortA, EncoderOutputMode.Default)
+	PsoDistanceConfigureInputs($axis, [PsoDistanceInput.XC4SyncPortA])
+
+	PsoDistanceCounterOn($axis2)
+	PsoDistanceEventsOn($axis2)
+
+    //****** PSO waveform module setup (pulse) ******
+    PsoWaveformConfigureMode($axis2, PsoWaveformMode.Pulse)
+    PsoWaveformConfigurePulseFixedTotalTime($axis2, $FixedTotalTime)  // Total pulse time (microseconds)
+    PsoWaveformConfigurePulseFixedOnTime($axis2, $FixedOnTime)        // ON time (microseconds)
+    PsoWaveformConfigurePulseFixedCount($axis2, $FixedCount)          // Number of output events per pulse
+    PsoWaveformApplyPulseConfiguration($axis2)
+	//PsoWaveformOn($axis)  // Ensure PSO waveform is turned on
+
+    // Configure PSO output source and physical output pin
+	//PsoWaveformOn($axis)  // Ensure PSO waveform is turned on
+    //PsoOutputConfigureSource($axis, PsoOutputSource.Waveform)
+    PsoOutputConfigureOutput($axis2, PsoOutputPin.XC4AuxiliaryMarkerSingleEnded)
+	PsoOutputConfigureSource($axis2, PsoOutputSource.Waveform)
+	PsoWaveformOn($axis2)
+	
+	MoveFreerun($axis, $velocity)
+
+end
+
+function Modulo($value as real, $divisor as real) as real
+	return $value - (Floor($value/$divisor)*$divisor)
+end
