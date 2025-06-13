@@ -37,3 +37,8 @@ Python-based interface for automation:
 
 Go to Aerotech's Automation1 document page: https://help.aerotech.com/automation1/Content/MainPage.htm 
 or contact Aerotech's technical support.
+
+## Author
+
+- [Vattanary Tevy](https://github.com/VattanaryT)
+- last updated: 06/13/2025
